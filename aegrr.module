@@ -1,0 +1,99 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * 
+ */
+
+/**
+ * Implementation of hook_form_alter().
+ */
+function aegrr_form_alter(&$form, $form_state, $form_id) {
+  if ($form_id == 'site_node_form') {
+    $node = $form['#node'];
+
+    $form['aegrr'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Performance Settings'),
+      '#collapsible' => TRUE,
+      '#tree' => TRUE,
+    );
+
+    if (isset($node->aegrr->record_id)) {
+      $form['aegrr']['record_id'] = array(
+        '#type' => 'value',
+        '#value' => $node->aegrr->record_id,
+      );
+    }
+
+    $form['aegrr']['items']['#tree'] = TRUE;
+    $form['aegrr']['items']['varnish'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Varnish'),
+      '#default_value' => isset($node->aegrr->items['varnish']) ? $node->aegrr->items['varnish'] : FALSE,
+    );
+    $form['aegrr']['items']['cache'] = array(
+      '#type' => 'radios',
+      '#title' => t('Cache'),
+      '#default_value' => isset($node->aegrr->items['cache']) ? $node->aegrr->items['cache'] : NULL,
+      '#options' => array(
+        'memcache' => t('Memcache'),
+        'apc' => t('APC'),
+      ),
+    );
+  }
+}
+
+/**
+ * Implementation of hook_nodeapi().
+ * Act on nodes defined by other modules.
+ *
+ * @param &$node
+ *   The node the action is being performed on.
+ * @param $op
+ *   What kind of action is being performed.
+ * @param $a3
+ *   - For "view", passes in the $teaser parameter from node_view().
+ *   - For "validate", passes in the $form parameter from node_validate().
+ * @param $a4
+ *   - For "view", passes in the $page parameter from node_view().
+ * @return
+ *   This varies depending on the operation.
+ *   - The "presave", "insert", "update", "delete", "print" and "view"
+ *     operations have no return value.
+ *   - The "load" operation should return an array containing pairs
+ *     of fields => values to be merged into the node object.
+ */
+function aegrr_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+  if ($node->type == 'site') {
+    switch ($op) {
+      case 'update':
+      case 'insert':
+        if (isset($node->aegrr)) {
+          $record = (object) $node->aegrr;
+          $record->nid = $node->nid;
+          aegrr_save($record);
+        }
+        break;
+      case 'load':
+        return array('aegrr' => aegrr_load($node->nid));
+      case 'delete':
+        aegrr_delete($node->nid);
+    }
+  }
+}
+
+function aegrr_save($record) {
+  if (isset($record->record_id)) {
+    return drupal_write_record('hosting_site_performance', $record, 'record_id');
+  }
+  return drupal_write_record('hosting_site_performance', $record);
+}
+
+function aegrr_load($nid) {
+  $sql = "SELECT * FROM {hosting_site_performance} WHERE nid = %d";
+  $record = db_fetch_object(db_query($sql, $nid));
+  $record->items = unserialize($record->items);
+  return $record;
+}

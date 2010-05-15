@@ -1,0 +1,6 @@
+; $Id$
+name = AeGrr!
+description = Tools for using Varnish, memcache, etc with Aegir
+dependencies[] = hosting_site
+package = Hosting
+core = 6.x

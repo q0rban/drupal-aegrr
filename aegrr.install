@@ -1,0 +1,48 @@
+<?php
+// $Id$
+
+/**
+ * Implementation of hook_schema().
+ */
+function aegrr_schema() {
+  $schema = array();
+
+  $schema['hosting_site_performance'] = array(
+    'description' => 'Stores performance settings for a site node.',
+    'fields' => array(
+      'record_id' => array(
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The Id of this {hosting_site_performance} record.',
+        'no export' => TRUE,
+      ),
+      'nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'items' => array(
+        'type' => 'text',
+        'size' => 'big',
+        'description' => 'Serialized data being stored.',
+        'serialize' => TRUE,
+      ),
+    ),
+    'indexes' => array(
+      'primary_key' => array('record_id'),
+    ),
+  );
+
+  return $schema;
+}
+
+function aegrr_install() {
+  drupal_install_schema('aegrr');
+}
+
+function aegrr_uninstall() {
+  // Remove tables.
+  drupal_uninstall_schema('aegrr');
+}
