@@ -6,12 +6,16 @@
  * 
  */
 
+module_load_include('inc', 'aegrr', 'aegrr.item');
+
 /**
  * Implementation of hook_form_alter().
  */
 function aegrr_form_alter(&$form, $form_state, $form_id) {
   if ($form_id == 'site_node_form') {
     $node = $form['#node'];
+
+    $form['#aegrr_items'] = aegrr_items_get();
 
     $form['aegrr'] = array(
       '#type' => 'fieldset',
@@ -28,42 +32,52 @@ function aegrr_form_alter(&$form, $form_state, $form_id) {
     }
 
     $form['aegrr']['items']['#tree'] = TRUE;
-    $form['aegrr']['items']['varnish'] = array(
-      '#type' => 'checkbox',
-      '#title' => t('Varnish'),
-      '#default_value' => isset($node->aegrr->items['varnish']) ? $node->aegrr->items['varnish'] : FALSE,
-    );
-    $form['aegrr']['items']['cache'] = array(
-      '#type' => 'radios',
-      '#title' => t('Cache'),
-      '#default_value' => isset($node->aegrr->items['cache']) ? $node->aegrr->items['cache'] : NULL,
-      '#options' => array(
-        'memcache' => t('Memcache'),
-        'apc' => t('APC'),
-      ),
-    );
+
+    foreach($form['#aegrr_items'] as $name => $item) {
+      $form['aegrr']['items'][$name] = $item->form($form, $node);
+    }
   }
 }
 
 /**
- * Implementation of hook_nodeapi().
- * Act on nodes defined by other modules.
+ * Get all aegrrItem objects.
  *
- * @param &$node
- *   The node the action is being performed on.
- * @param $op
- *   What kind of action is being performed.
- * @param $a3
- *   - For "view", passes in the $teaser parameter from node_view().
- *   - For "validate", passes in the $form parameter from node_validate().
- * @param $a4
- *   - For "view", passes in the $page parameter from node_view().
  * @return
- *   This varies depending on the operation.
- *   - The "presave", "insert", "update", "delete", "print" and "view"
- *     operations have no return value.
- *   - The "load" operation should return an array containing pairs
- *     of fields => values to be merged into the node object.
+ *   An array of aegrrItem objects.
+ */
+function aegrr_items_get() {
+  static $items = array();
+
+  if (empty($items)) {
+    foreach(module_invoke_all('aegrr_items') as $name => $item) {
+      if (isset($item['file'])) {
+        require_once($item['file']);
+      }
+      $items[$name] = new $item['class'];
+    }
+  }
+
+  return $items;
+}
+
+/**
+ * Implementation of hook_aegrr_items().
+ */
+function aegrr_aegrr_items() {
+  $items = array();
+
+  $items['reverse_proxy'] = array(
+    'class' => 'aegrrReverseProxyItem',
+  );
+  $items['opcode_cache'] = array(
+    'class' => 'aegrrOpcodeCache',
+  );
+
+  return $items;
+}
+
+/**
+ * Implementation of hook_nodeapi().
  */
 function aegrr_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
   if ($node->type == 'site') {
@@ -84,16 +98,57 @@ function aegrr_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
   }
 }
 
+/**
+ * Save a record.
+ */
 function aegrr_save($record) {
+  $aegrr_items = $record->items;
+
+  $record->items = array();
+
+  // Go through each item and ensure that we aren't storing the object.
+  foreach($aegrr_items as $name => $item) {
+    if (is_object($item) && isset($item->values)) {
+      $record->items[$name] = $item->values;
+    }
+    else {
+      $record->items[$name] = $item;
+    }
+  }
+
   if (isset($record->record_id)) {
     return drupal_write_record('hosting_site_performance', $record, 'record_id');
   }
   return drupal_write_record('hosting_site_performance', $record);
 }
 
+/**
+ * Load up a record from the db.
+ */
 function aegrr_load($nid) {
   $sql = "SELECT * FROM {hosting_site_performance} WHERE nid = %d";
   $record = db_fetch_object(db_query($sql, $nid));
-  $record->items = unserialize($record->items);
+
+  $aegrr_items = aegrr_items_get();
+  $items = unserialize($record->items);
+
+  $record->items = $record->rendered = array();
+
+  foreach($items as $name => $item) {
+    if (isset($aegrr_items[$name]) && $item = $aegrr_items[$name]) {
+      $item->setValues($item);
+
+      $item->render($record->conf);
+      $record->items[$name] = $item;
+    }
+  }
+
   return $record;
+}
+
+/**
+ * Delete a record.
+ */
+function aegrr_delete($nid) {
+  db_query("DELETE FROM {hosting_site_performance} WHERE nid = %d", $nid);
 }
